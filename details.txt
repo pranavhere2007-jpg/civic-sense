@@ -1,0 +1,20 @@
+We checked the legal possibilities:
+- cleaning is legal, but condition: transfer of garbage from one place to another empty lot is not legal. Must be handed over to respective authorities.
+- Filling potholes, or indulging in repair of public property like roads or buildings is illegal.
+- Can be made possible in future, by taking local police permissions, and operating in legal grey-area.
+
+created point system to introduce 'gamification' concept into cleaning: 
+- included leaderboard - TODO
+- giving points for uploading issues
+- giving points for resolving issues
+
+
+TODO:
+Implement a robust fraud-prevention:
+- checks fraudulent issue uploads (A fixed limit on the number of uploads per week, or per day to prevent point farming or spam)
+- checks fraudulent issue resolving updates (end photo)
+- checks for legal and ethical problems in the solution plan of the volunteer. If anything that requires disclosure is found, push notification to volunteer to give instructions on the proper permissions and disclosures required for their plan to work. Only if these permission documents, and disclosure proofs are uploaded, and verified by either client-side or server-side verification by the platform, can the volunteer begin their solution. If the volunteer wants, he can update his plan to avoid any legal or ethical complications.
+
+Build categorization engine:
+- should categorize incoming issues based on the amount of work required. 
+- should categorize based on the type of task: garbage, weeding, or others.
