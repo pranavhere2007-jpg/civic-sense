@@ -56,7 +56,7 @@ export default function SidePanel({ report, onClose }) {
       Look at Image 1 (the original reported issue) and Image 2 (the new photo).
       1. Do the background environments (pavement, walls, trees) match closely enough to prove they are the exact same location?
       2. ${isFinal ? 'Has the issue shown in Image 1 been visibly resolved or cleaned up in Image 2?' : 'Is there visible progress being made on the issue?'}
-      Respond ONLY with a raw JSON object containing: 'backgroundMatch' (boolean), 'resolved' (boolean), and 'reason' (string explaining your visual analysis). Do not use markdown tags.`;
+      Respond ONLY with raw JSON. No markdown formatting, no conversational text.`;
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST',
@@ -69,16 +69,34 @@ export default function SidePanel({ report, onClose }) {
               { inline_data: { mime_type: "image/jpeg", data: newBase64 } }
             ]
           }],
-          generationConfig: { responseMimeType: "application/json" }
+          generationConfig: { 
+            responseMimeType: "application/json",
+            // NEW: Forcing the exact schema so Gemini cannot hallucinate extra text
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                backgroundMatch: { type: "BOOLEAN" },
+                resolved: { type: "BOOLEAN" },
+                reason: { type: "STRING" }
+              },
+              required: ["backgroundMatch", "resolved", "reason"]
+            }
+          }
         })
       });
 
       const data = await response.json();
-      const aiResult = JSON.parse(data.candidates[0].content.parts[0].text);
+      let rawText = data.candidates[0].content.parts[0].text;
+
+      // NEW: The Safety Net. Strip out any sneaky markdown formatting
+      rawText = rawText.replace(/```json/gi, '').replace(/```/gi, '').trim();
+      
+      const aiResult = JSON.parse(rawText);
       return aiResult;
+      
     } catch (err) {
       console.error("AI Error:", err);
-      alert(`RAW AI ERROR: ${err.message || err}`);
+      alert(`RAW AI ERROR: ${err.message || err}`); 
       throw new Error("AI verification failed to process. Try again.");
     }
   };
