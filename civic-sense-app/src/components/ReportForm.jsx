@@ -20,8 +20,8 @@ export default function ReportForm() {
   const canvasRef = useRef(null);
   const streamRef = useRef(null); 
 
-  const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dnnwlkgcl/image/upload";
-  const CLOUDINARY_UPLOAD_PRESET = "civic-sense-app";
+  const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`;
+  const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
   const startCamera = async () => {
     setStatusMsg('');

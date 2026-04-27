@@ -16,8 +16,8 @@ export default function SidePanel({ report, onClose }) {
   const finalInputRef = useRef(null);
 
   // Cloudinary Config (Ensure YOUR_CLOUD_NAME is set!)
-  const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/YOUR_CLOUD_NAME/image/upload";
-  const CLOUDINARY_UPLOAD_PRESET = "civic_reports";
+  const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`;
+  const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
   // 1. LAZY EXPIRATION: 24 Hours for Process Photo
   const isClaimExpired = () => {
