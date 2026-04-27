@@ -78,6 +78,7 @@ export default function SidePanel({ report, onClose }) {
       return aiResult;
     } catch (err) {
       console.error("AI Error:", err);
+      alert(`RAW AI ERROR: ${err.message || err}`);
       throw new Error("AI verification failed to process. Try again.");
     }
   };
