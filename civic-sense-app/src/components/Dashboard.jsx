@@ -1,7 +1,9 @@
 // src/components/Dashboard.jsx
 import { signOut } from 'firebase/auth';
-import { auth } from '../firebase';
-import { useState } from 'react';
+import { db, auth } from '../firebase';
+import { doc, onSnapshot } from 'firebase/firestore'
+import { useState, useEffect } from 'react';
+import Leaderboard from './Leaderboard';
 
 import ReportForm from './ReportForm';
 import MapView from './MapView';
@@ -12,6 +14,21 @@ import AllIncidents from './AllIncidents'; // NEW IMPORT
 export default function Dashboard() {
   const [selectedReport, setSelectedReport] = useState(null);
   const [currentView, setCurrentView] = useState('map'); // 'map', 'activity', or 'list'
+  const [userPoints, setUserPoints] = useState(0);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    
+    const userRef = doc(db, 'Users', auth.currentUser.uid);
+    const unsubscribe = onSnapshot(userRef, (docSnap) => {
+      if (docSnap.exists()) {
+        // If the points field doesn't exist yet, default to 0
+        setUserPoints(docSnap.data().points || 0);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleNavigation = (view) => {
     setCurrentView(view);
@@ -27,6 +44,12 @@ export default function Dashboard() {
         
         {/* NAVIGATION PANEL */}
         <nav style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ padding: '8px 15px', backgroundColor: '#ff9800', color: '#000', borderRadius: '20px', fontWeight: 'bold', marginRight: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            🏆 {userPoints} Pts
+          </div>
+          <button onClick={() => handleNavigation('leaderboard')} style={{ padding: '8px 12px', background: currentView === 'leaderboard' ? '#333' : 'transparent', color: 'white', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer' }}>
+            🏅 Leaderboard
+          </button>
           <button onClick={() => handleNavigation('map')} style={{ padding: '8px 12px', background: currentView === 'map' ? '#333' : 'transparent', color: 'white', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer' }}>
             🗺️ Live Map
           </button>
@@ -69,6 +92,10 @@ export default function Dashboard() {
         {currentView === 'activity' && (
           /* Pass setSelectedReport to MyActivity so it can trigger the Modal too! */
           <MyActivity onSelectReport={setSelectedReport} />
+        )}
+
+        {currentView === 'leaderboard' && (
+           <Leaderboard />
         )}
 
       </div>
