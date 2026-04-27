@@ -30,7 +30,7 @@ export default function MapView({ onSelectReport }) {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const reportsData = [];
       querySnapshot.forEach((doc) => {
-        if (doc.data().latitude && doc.data().longitude) {
+        if (doc.data().latitude && doc.data().longitude && doc.status !== "Resolved") {
           reportsData.push({ id: doc.id, ...doc.data() });
         }
       });

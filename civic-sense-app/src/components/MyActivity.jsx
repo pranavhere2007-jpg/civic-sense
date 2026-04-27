@@ -2,9 +2,8 @@
 import { useEffect, useState } from 'react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import SidePanel from './SidePanel'; // Import our re-usable panel!
 
-export default function MyActivity() {
+export default function MyActivity({onSelectReport}) {
   const [raisedIssues, setRaisedIssues] = useState([]);
   const [volunteeredIssues, setVolunteeredIssues] = useState([]);
   const [activeTab, setActiveTab] = useState('actions');
@@ -57,10 +56,10 @@ export default function MyActivity() {
           <button onClick={() => { setActiveTab('actions'); setSelectedIssue(null); }} style={tabStyle('actions')}>
             Action Center {actionItems.length > 0 && <span style={{ background: 'red', borderRadius: '50%', padding: '2px 8px', marginLeft: '5px' }}>{actionItems.length}</span>}
           </button>
-          <button onClick={() => { setActiveTab('raised'); setSelectedIssue(null); }} style={tabStyle('raised')}>
+          <button onClick={() => { setActiveTab('raised'); onSelectReport(null); }} style={tabStyle('raised')}>
             My Reports
           </button>
-          <button onClick={() => { setActiveTab('volunteered'); setSelectedIssue(null); }} style={tabStyle('volunteered')}>
+          <button onClick={() => { setActiveTab('volunteered'); onSelectReport(null); }} style={tabStyle('volunteered')}>
             My Tasks
           </button>
         </div>
@@ -77,7 +76,7 @@ export default function MyActivity() {
                 <div 
                   key={issue.id} 
                   style={{ ...cardStyle, borderLeft: '4px solid #ff9800', borderColor: selectedIssue?.id === issue.id ? '#ff9800' : '#444' }}
-                  onClick={() => setSelectedIssue(issue)}
+                  onClick={() => onSelectReport(issue)}
                 >
                   <strong>Verification Required:</strong> A volunteer claims they fixed: "{issue.description}"
                   <br /><br />
@@ -95,7 +94,7 @@ export default function MyActivity() {
                 <div 
                   key={issue.id} 
                   style={{ ...cardStyle, borderColor: selectedIssue?.id === issue.id ? '#2196F3' : '#444' }}
-                  onClick={() => setSelectedIssue(issue)}
+                  onClick={() => onSelectReport(issue)}
                 >
                   <strong style={{ color: '#2196F3' }}>{issue.status}</strong> - {issue.description}
                 </div>
@@ -111,7 +110,7 @@ export default function MyActivity() {
                 <div 
                   key={issue.id} 
                   style={{ ...cardStyle, borderColor: selectedIssue?.id === issue.id ? '#4CAF50' : '#444' }}
-                  onClick={() => setSelectedIssue(issue)}
+                  onClick={() => onSelectReport(issue)}
                 >
                   <strong style={{ color: '#4CAF50' }}>{issue.status}</strong> - {issue.description}
                   {issue.status === 'Claimed' && (
@@ -124,14 +123,6 @@ export default function MyActivity() {
 
         </div>
       </div>
-
-      {/* Right Side: The Re-used Side Panel */}
-      {selectedIssue && (
-        <div style={{ width: '350px', flexShrink: 0 }}>
-          <SidePanel report={selectedIssue} onClose={() => setSelectedIssue(null)} />
-        </div>
-      )}
-
     </div>
   );
 }
