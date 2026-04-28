@@ -45,39 +45,28 @@ export default function SidePanel({ report, onClose }) {
     return await fileToBase64(blob);
   };
 
-  // --- 3. AI: Structured Outputs (JSON Schema) ---
+  // --- 3. AI: The Unbreakable Gemini Inspector ---
   const runAIVerification = async (newFile, isFinal) => {
     setStatusMsg("🤖 AI is inspecting the images...");
     try {
       const originalBase64 = await urlToBase64(report.imageUrl);
       const newBase64 = await fileToBase64(newFile);
 
-      // We give the AI entirely different rules depending on the photo type
+      // DYNAMIC PROMPT: Completely removes the 'resolved' variable for Process Photos
       const prompt = isFinal
         ? `You are an anti-fraud inspector. Look at Image 1 (original issue) and Image 2 (final resolution).
-           1. backgroundMatch: Do the physical environments (pavement, walls, background) match exactly?
-           2. resolved: Has the issue in Image 1 been completely resolved/cleaned in Image 2?
-           3. reason: Briefly explain your visual analysis.`
+           Respond ONLY with a raw JSON object. Do not include markdown formatting like \`\`\`json or conversational text.
+           Must strictly follow this format: {"backgroundMatch": true, "resolved": true, "reason": "brief explanation"}`
         : `You are an anti-fraud inspector. Look at Image 1 (original issue) and Image 2 (progress photo).
-           1. backgroundMatch: Do the physical environments (pavement, walls, background) match exactly to prove the volunteer is at the correct location?
-           2. reason: Briefly explain your visual analysis. Ignore resolution status entirely.`;
+           Respond ONLY with a raw JSON object. Do not include markdown formatting like \`\`\`json or conversational text. Ignore resolution status.
+           Must strictly follow this format: {"backgroundMatch": true, "reason": "brief explanation"}`;
 
-      // We dynamically change the required JSON schema
-      const schemaProperties = isFinal 
-        ? { backgroundMatch: { type: "BOOLEAN" }, resolved: { type: "BOOLEAN" }, reason: { type: "STRING" } }
-        : { backgroundMatch: { type: "BOOLEAN" }, reason: { type: "STRING" } };
-        
-      const schemaRequired = isFinal 
-        ? ["backgroundMatch", "resolved", "reason"] 
-        : ["backgroundMatch", "reason"];
-
-      // Using gemini-1.5-flash with strict JSON generation config
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+      // THE FIX: Upgraded back to the correct gemini-2.5-flash model
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
-            role: "user",
             parts: [
               { text: prompt },
               { inline_data: { mime_type: "image/jpeg", data: originalBase64 } },
@@ -85,12 +74,7 @@ export default function SidePanel({ report, onClose }) {
             ]
           }],
           generationConfig: { 
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: "OBJECT",
-              properties: schemaProperties,
-              required: schemaRequired
-            }
+            responseMimeType: "application/json"
           }
         })
       });
@@ -101,10 +85,15 @@ export default function SidePanel({ report, onClose }) {
         throw new Error(data.error?.message || "API request failed");
       }
 
-      // Because we used responseSchema, this is mathematically guaranteed to be purely JSON.
       const rawText = data.candidates[0].content.parts[0].text;
-      const aiResult = JSON.parse(rawText);
       
+      // THE EXTRACTOR: Uses Regex to slice out the JSON object, ignoring any extra chatty text
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("AI failed to output valid JSON format.");
+      }
+
+      const aiResult = JSON.parse(jsonMatch[0]);
       return aiResult;
 
     } catch (err) {
