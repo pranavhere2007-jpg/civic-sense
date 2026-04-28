@@ -45,6 +45,10 @@ export default function Auth() {
     }
   };
 
+  if (showNGOSignUp) {
+    return <NGOSignUp onCancel={() => setShowNGOSignUp(false)} />;
+  }
+
   return (
     <div style={{ maxWidth: '400px', margin: '50px auto', fontFamily: 'sans-serif' }}>
       <h2>{isLogin ? 'Log In to CivicSense' : 'Join CivicSense'}</h2>
@@ -82,6 +86,17 @@ export default function Auth() {
           {isLogin ? 'Sign Up' : 'Log In'}
         </button>
       </p>
+      <div style={{ marginTop: '30px', textAlign: 'center', borderTop: '1px solid #333', paddingTop: '20px' }}>
+        <p style={{ color: '#aaa', fontSize: '14px', marginBottom: '10px' }}>
+          Represent a Government Agency or NGO?
+        </p>
+        <button 
+          onClick={() => setShowNGOSignUp(true)}
+          style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #9c27b0', color: '#e1bee7', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+        >
+          Open Agency Portal
+        </button>
+      </div>
     </div>
   );
 }
