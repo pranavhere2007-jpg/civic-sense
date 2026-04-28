@@ -1,5 +1,5 @@
 // src/components/SidePanel.jsx
-import { doc, updateDoc, deleteDoc, increment, arrayUnion } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { useState, useRef } from 'react';
 
@@ -18,7 +18,6 @@ export default function SidePanel({ report, onClose }) {
   const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`;
   const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
-  // --- 1. MATH: Haversine Distance Calculator ---
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3;
     const toRad = (value) => (value * Math.PI) / 180;
@@ -31,7 +30,6 @@ export default function SidePanel({ report, onClose }) {
     return R * c; 
   };
 
-  // --- 2. UTILS: Image Converters ---
   const fileToBase64 = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -45,14 +43,12 @@ export default function SidePanel({ report, onClose }) {
     return await fileToBase64(blob);
   };
 
-  // --- 3. AI: The Unbreakable Gemini Inspector ---
   const runAIVerification = async (newFile, isFinal) => {
     setStatusMsg("🤖 AI is inspecting the images...");
     try {
       const originalBase64 = await urlToBase64(report.imageUrl);
       const newBase64 = await fileToBase64(newFile);
 
-      // DYNAMIC PROMPT: Completely removes the 'resolved' variable for Process Photos
       const prompt = isFinal
         ? `You are an anti-fraud inspector. Look at Image 1 (original issue) and Image 2 (final resolution).
            Respond ONLY with a raw JSON object. Do not include markdown formatting like \`\`\`json or conversational text.
@@ -61,7 +57,6 @@ export default function SidePanel({ report, onClose }) {
            Respond ONLY with a raw JSON object. Do not include markdown formatting like \`\`\`json or conversational text. Ignore resolution status.
            Must strictly follow this format: {"backgroundMatch": true, "reason": "brief explanation"}`;
 
-      // THE FIX: Upgraded back to the correct gemini-2.5-flash model
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -73,28 +68,18 @@ export default function SidePanel({ report, onClose }) {
               { inline_data: { mime_type: "image/jpeg", data: newBase64 } }
             ]
           }],
-          generationConfig: { 
-            responseMimeType: "application/json"
-          }
+          generationConfig: { responseMimeType: "application/json" }
         })
       });
 
       const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error?.message || "API request failed");
-      }
+      if (!response.ok) throw new Error(data.error?.message || "API request failed");
 
       const rawText = data.candidates[0].content.parts[0].text;
-      
-      // THE EXTRACTOR: Uses Regex to slice out the JSON object, ignoring any extra chatty text
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("AI failed to output valid JSON format.");
-      }
+      if (!jsonMatch) throw new Error("AI failed to output valid JSON format.");
 
-      const aiResult = JSON.parse(jsonMatch[0]);
-      return aiResult;
+      return JSON.parse(jsonMatch[0]);
 
     } catch (err) {
       console.error("AI Error:", err);
@@ -103,7 +88,6 @@ export default function SidePanel({ report, onClose }) {
     }
   };
 
-  // --- 4. PIPELINE: GPS & AI Guard ---
   const verifyAndUpload = async (file, isFinal) => {
     setIsUploading(true);
     setStatusMsg("📍 Checking GPS coordinates...");
@@ -113,34 +97,22 @@ export default function SidePanel({ report, onClose }) {
         navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
       });
 
-      const currentLat = position.coords.latitude;
-      const currentLng = position.coords.longitude;
-      
-      const distance = calculateDistance(report.latitude, report.longitude, currentLat, currentLng);
+      const distance = calculateDistance(report.latitude, report.longitude, position.coords.latitude, position.coords.longitude);
       if (distance > 50) { 
         alert(`❌ Location Mismatch! You are ${Math.round(distance)} meters away. You must be at the exact location.`);
-        setIsUploading(false);
-        setStatusMsg("");
-        return;
+        setIsUploading(false); setStatusMsg(""); return;
       }
 
-      // Run AI Check
       const aiResult = await runAIVerification(file, isFinal);
       
-      // RULE 1: Background MUST match for ALL photos (Process & Final)
       if (!aiResult.backgroundMatch) {
         alert(`❌ AI Rejected: Backgrounds do not match. \nReason: ${aiResult.reason}`);
-        setIsUploading(false);
-        setStatusMsg("");
-        return;
+        setIsUploading(false); setStatusMsg(""); return;
       }
 
-      // RULE 2: Resolution MUST match ONLY for Final photos
       if (isFinal && !aiResult.resolved) {
         alert(`❌ AI Rejected: Issue does not appear resolved. \nReason: ${aiResult.reason}`);
-        setIsUploading(false);
-        setStatusMsg("");
-        return;
+        setIsUploading(false); setStatusMsg(""); return;
       }
 
       setStatusMsg("✅ Verification Passed! Uploading securely...");
@@ -152,23 +124,14 @@ export default function SidePanel({ report, onClose }) {
       const secureUrl = cloudinaryData.secure_url;
 
       if (isFinal) {
-        await updateDoc(doc(db, "Reports", report.id), {
-          afterPhoto: secureUrl,
-          status: 'Pending Verification',
-          resolvedAt: new Date(),
-          aiVerificationReason: aiResult.reason 
-        });
+        await updateDoc(doc(db, "Reports", report.id), { afterPhoto: secureUrl, status: 'Pending Verification', resolvedAt: new Date(), aiVerificationReason: aiResult.reason });
         alert("Resolution accepted by AI and submitted! Waiting for final community verification.");
         onClose();
       } else {
-        await updateDoc(doc(db, "Reports", report.id), {
-          processPhotos: arrayUnion(secureUrl),
-          status: 'In Progress'
-        });
+        await updateDoc(doc(db, "Reports", report.id), { processPhotos: arrayUnion(secureUrl), status: 'In Progress' });
         setStatusMsg("Process photo accepted and added!");
         setTimeout(() => setStatusMsg(""), 3000);
       }
-
     } catch (err) {
       console.error(err);
       alert(err.message || "Failed to verify location. Ensure permissions are granted.");
@@ -195,23 +158,27 @@ export default function SidePanel({ report, onClose }) {
   const isMyTask = report.volunteerId === currentUser?.uid;
   const processCount = report.processPhotos ? report.processPhotos.length : 0;
 
+  // Fallback for older reports that might not have the requiresNGO boolean yet
+  const requiresNGO = report.requiresNGO === true || report.category === 'Infrastructure';
+
   return (
     <div style={{ padding: '25px', backgroundColor: '#1e1e1e', border: '1px solid #333', borderRadius: '12px', color: '#fff', maxHeight: '85vh', overflowY: 'auto' }}>
       
-      {/* HEADER & IMAGE */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h3 style={{ margin: 0, color: '#2196F3' }}>{report.category}</h3>
+        <h3 style={{ margin: 0, color: '#2196F3' }}>{report.title || report.category}</h3>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', fontSize: '18px', cursor: 'pointer' }}>✕</button>
       </div>
+      
       <img src={report.imageUrl} alt="Issue" style={{ width: '100%', borderRadius: '8px', marginBottom: '15px', border: '1px solid #444', maxHeight: '200px', objectFit: 'cover' }} />
       
-      {/* STATUS */}
       <div style={{ backgroundColor: '#2a2a2a', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-        <p style={{ margin: '0 0 10px 0' }}><strong style={{ color: '#aaa' }}>Status: </strong> <span style={{ color: '#ff9800', fontWeight: 'bold' }}>{report.status}</span></p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <span><strong style={{ color: '#aaa' }}>Status: </strong> <span style={{ color: '#ff9800', fontWeight: 'bold' }}>{report.status}</span></span>
+          {report.scaleScore && <span style={{ color: '#aaa' }}>Scale: <strong style={{ color: '#fff' }}>{report.scaleScore}/10</strong></span>}
+        </div>
         <p style={{ margin: '0' }}><strong style={{ color: '#aaa' }}>Issue: </strong><br/>{report.description}</p>
       </div>
 
-      {/* PLAN OF ACTION */}
       {(report.planOfAction || isDraftingPlan) && (
         <div style={{ backgroundColor: '#1a233a', padding: '15px', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid #2196F3' }}>
           <strong style={{ color: '#2196F3' }}>Plan of Action:</strong>
@@ -226,7 +193,6 @@ export default function SidePanel({ report, onClose }) {
         </div>
       )}
 
-      {/* PROCESS & FINAL PHOTOS */}
       {processCount > 0 && (
         <div style={{ marginBottom: '20px' }}>
           <strong style={{ color: '#aaa' }}>Process Photos:</strong>
@@ -236,7 +202,6 @@ export default function SidePanel({ report, onClose }) {
         </div>
       )}
 
-      {/* AFTER PHOTO DISPLAY */}
       {report.afterPhoto && (
         <div style={{ marginBottom: '20px' }}>
           <strong style={{ color: '#4CAF50' }}>Resolution Proof:</strong>
@@ -246,10 +211,19 @@ export default function SidePanel({ report, onClose }) {
 
       {statusMsg && <div style={{ padding: '10px', marginBottom: '15px', backgroundColor: '#333', color: '#fff', borderRadius: '6px', textAlign: 'center', fontSize: '14px' }}>{statusMsg}</div>}
 
-      {/* CONTROLS */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {report.category === 'Community Action' && report.status === 'Open' && currentUser?.uid !== report.userId && !isDraftingPlan && (
-          <button onClick={() => setIsDraftingPlan(true)} style={{ backgroundColor: '#4CAF50', color: 'white', padding: '12px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Volunteer to Fix</button>
+        
+        {/* THE NEW LOGIC GATE FOR NGOs vs REGULAR VOLUNTEERS */}
+        {report.status === 'Open' && currentUser?.uid !== report.userId && !isDraftingPlan && (
+          requiresNGO ? (
+            <div style={{ backgroundColor: '#4a148c', color: '#e1bee7', padding: '12px', border: '1px solid #7b1fa2', borderRadius: '6px', textAlign: 'center', fontWeight: 'bold' }}>
+              🔒 Dispatched to Government / Verified Agency
+            </div>
+          ) : (
+            <button onClick={() => setIsDraftingPlan(true)} style={{ backgroundColor: '#4CAF50', color: 'white', padding: '12px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+              Volunteer to Fix
+            </button>
+          )
         )}
 
         <input type="file" accept="image/*" capture="environment" ref={processInputRef} onChange={handleProcessPhoto} style={{ display: 'none' }} />
