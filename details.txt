@@ -8,13 +8,70 @@ created point system to introduce 'gamification' concept into cleaning:
 - giving points for uploading issues
 - giving points for resolving issues
 
+Website takes in a photo of the issue, ai analyses the category, type, and assigns a score to it. If the score crosses a threshold, only ngos and verified agencies can volunteer for the issues, otherwise everybody can volunteer to fix. This is because for some issues, like fixing potholes, and buildings, legal permissions are required, often from the government, which the common man cannot easily  get. Also, for some issues, huge machinery is required, and huge manpower is required. Only NGOs or verified authorities have access to all these checkpoints.
+When volunteer to fix is clicked, a pop-up asks for the plan of action which the volunteer is planning to follow. This is a required step.
+24 hours is the timeframe before which the volunteer must give at least one process photo. 
+ai verifies whether the process photo is at the same location or not, and if the issue is the same one or not (background, item, ...). Process photo accepted only if these checks are passed. 
+Finally, volunteer is required to upload the final photo. The same checks are run again, with one additional one: if the raised issue has actually been resolved or not. If yes, then status is changed to "Pending Verification".
+As soon as the issue shifts, the locals will be notified to check if the issue has really been resolved. We will have them vote, and use the final result to either change the issue status to "Resolved" or to "In Progress".
+
 
 TODO:
 Implement a robust fraud-prevention:
 - checks fraudulent issue uploads (A fixed limit on the number of uploads per week, or per day to prevent point farming or spam)
-- checks fraudulent issue resolving updates (end photo)
+- checks fraudulent issue resolving updates (end photo) (done)
 - checks for legal and ethical problems in the solution plan of the volunteer. If anything that requires disclosure is found, push notification to volunteer to give instructions on the proper permissions and disclosures required for their plan to work. Only if these permission documents, and disclosure proofs are uploaded, and verified by either client-side or server-side verification by the platform, can the volunteer begin their solution. If the volunteer wants, he can update his plan to avoid any legal or ethical complications.
 
 Build categorization engine:
-- should categorize incoming issues based on the amount of work required. 
-- should categorize based on the type of task: garbage, weeding, or others.
+- should categorize incoming issues based on the amount of work required. (done)
+- should categorize based on the type of task: garbage, weeding, or others. (done)
+
+Demo NGO details:
+demo.ngo7278@civicsense.org
+demo123456
+           
+
+
+Final description:
+
+
+
+
+CivicSense: End-to-End Architecture and Platform Workflow
+
+1. ZERO-EFFORT REPORTING & AI TRIAGE
+The platform utilizes a "Zero-Effort Reporting" philosophy. To remove friction, users do not fill out manual forms. They simply take a photo of a civic issue and allow the system's location services to capture their exact GPS coordinates. 
+
+Technical Implementation:
+The image is converted to Base64 and sent to the Google Gemini 2.5 Flash Multimodal LLM. We utilize "Structured Outputs" (responseSchema) to mathematically force the AI to return a strict JSON object instead of conversational text. The AI acts as a triage inspector, auto-generating the title, description, category, and a "scaleScore" (1 to 10).
+
+The NGO Logic Gate:
+If the AI assigns a scaleScore greater than 6, or categorizes the issue as heavy "Infrastructure," a boolean flag (requiresNGO) is set to true. This decision was made to protect everyday citizens from legal liability and physical danger. Massive issues (like collapsed roads or live power lines) require heavy machinery and government permits. These high-scale issues are stored in the Firebase NoSQL database but are locked on the frontend, visually displaying as "Dispatched to Verified Agencies." Normal citizens can only claim safe, low-scale issues.
+
+2. CLAIMING & THE PLAN OF ACTION
+When a user decides to fix an open issue, they must click "Volunteer to Fix" and submit a written "Plan of Action." 
+
+Reasoning:
+This acts as a psychological commitment mechanism to prevent users from accidentally claiming issues or trolling the map. Once claimed, the database updates the issue status, assigning the user's unique Firebase Auth UID to the task. The volunteer is placed on a 24-hour Service Level Agreement (SLA) to submit their first piece of visual proof (the process photo).
+
+3. THE ZERO-TRUST VERIFICATION ENGINE
+The core of the application is the Zero-Trust Verification pipeline. Because the system features gamification (awarding points for resolving issues), we cannot simply trust that a user uploaded a valid picture. 
+
+Step A: The Geospatial Net (Haversine Formula)
+Before an image is even uploaded to our Cloudinary storage, the frontend captures the user's live GPS coordinates. It runs the Haversine formula—a mathematical equation that calculates the exact distance between the user's current location and the original issue's coordinates across the curvature of the Earth. If the user is more than 50 meters away, the upload is hard-rejected locally. This prevents "couch-volunteering."
+
+Step B: The Environmental & Contextual AI
+If the user passes the GPS check, the original issue photo and the new process/final photo are sent to the Gemini AI. 
+- For Process Photos: The AI is instructed to strictly compare the background environments (pavement, walls, trees) to ensure the user is at the exact right spot. It ignores resolution status.
+- For Final Photos: The AI checks the background AND evaluates if the specific civic issue (e.g., the garbage pile) has been visibly removed or repaired. 
+If the AI detects a mismatch, the image is rejected, saving database storage space and preventing fraud.
+
+4. DECENTRALIZED CONSENSUS (THE COMMUNITY JURY)
+Once the AI approves a final photo, the system does not immediately close the issue. It shifts the status to "Pending Verification." 
+
+Reasoning & Implementation:
+Relying entirely on the original reporter to verify a fix creates a bottleneck (they might delete the app or never log back in). Instead, we built a localized Community Jury. 
+
+The app queries the Firebase database for all "Pending Verification" issues and runs the Haversine formula again to display only the issues within a 5-kilometer radius of the current user. Locals can view the Before and After photos and vote to approve or reject the fix. 
+
+This introduces a secondary gamification loop: users earn points (5 pts) just for participating in the jury. Once an issue receives 3 upvotes, the decentralized consensus is reached. The database flips the status to "Resolved," the original volunteer is awarded their full points (50 pts), and the issue is dynamically filtered off the live map to prevent clutter. If rejected, it reverts to "In Progress," forcing the volunteer to finish the job.

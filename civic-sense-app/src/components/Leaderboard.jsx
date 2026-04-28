@@ -1,56 +1,106 @@
 // src/components/Leaderboard.jsx
-import { useEffect, useState } from 'react';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export default function Leaderboard() {
-  const [topUsers, setTopUsers] = useState([]);
+  const [citizens, setCitizens] = useState([]);
+  const [agencies, setAgencies] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('citizens'); // 'citizens' or 'agencies'
 
   useEffect(() => {
-    const q = query(collection(db, 'Users'), orderBy('points', 'desc'), limit(10)); // Bumped to top 10!
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const users = [];
-      snapshot.forEach((doc) => {
-        users.push({ id: doc.id, ...doc.data() });
-      });
-      setTopUsers(users);
-    });
+    const fetchLeaderboards = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'Users'));
+        
+        let allUsers = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
 
-    return () => unsubscribe();
+        // 1. GHOST THE ADMIN: Make sure the admin email never shows up
+        allUsers = allUsers.filter(user => user.email !== 'admin@college.edu');
+
+        // 2. Sort everyone by points (highest to lowest)
+        allUsers.sort((a, b) => (b.points || 0) - (a.points || 0));
+
+        // 3. Split into two leagues based on their role
+        const citizenList = allUsers.filter(user => user.role !== 'organization');
+        const agencyList = allUsers.filter(user => user.role === 'organization');
+
+        setCitizens(citizenList);
+        setAgencies(agencyList);
+      } catch (err) {
+        console.error("Failed to fetch leaderboard:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLeaderboards();
   }, []);
 
+  if (loading) {
+    return <div style={{ textAlign: 'center', padding: '40px', color: '#ff9800' }}>Loading rankings...</div>;
+  }
+
+  // Helper to get the correct array based on the active tab
+  const currentList = activeTab === 'citizens' ? citizens : agencies;
+
   return (
-    <div style={{ backgroundColor: '#1e1e1e', padding: '20px', borderRadius: '12px', color: '#fff', border: '1px solid #333', maxWidth: '600px', margin: '0 auto' }}>
-      <h2 style={{ borderBottom: '1px solid #444', paddingBottom: '10px', marginTop: 0, textAlign: 'center', color: '#ff9800' }}>
-        🏆 Top Civic Volunteers
-      </h2>
-      
-      {topUsers.length === 0 ? (
-        <p style={{ color: '#888', textAlign: 'center' }}>No volunteers on the board yet. Be the first!</p>
-      ) : (
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-          {topUsers
-          .filter((user) => user.email !== "admin@college.edu")
-          .map((user, index) => {
-            // Safety net just in case email is missing
-            const displayName = user.email ? user.email.split('@')[0] : 'Anonymous Citizen';
-            
-            // Give top 3 special colors
-            const rankColor = index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : '#888';
+    <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', color: '#fff' }}>
+      <h2 style={{ textAlign: 'center', color: '#ff9800', marginBottom: '20px' }}>🏆 Civic Leaderboard</h2>
+
+      {/* THE TAB TOGGLE */}
+      <div style={{ display: 'flex', backgroundColor: '#1e1e1e', borderRadius: '8px', overflow: 'hidden', marginBottom: '20px', border: '1px solid #333' }}>
+        <button 
+          onClick={() => setActiveTab('citizens')}
+          style={{ flex: 1, padding: '12px', cursor: 'pointer', border: 'none', fontWeight: 'bold', backgroundColor: activeTab === 'citizens' ? '#ff9800' : 'transparent', color: activeTab === 'citizens' ? '#000' : '#aaa', transition: '0.3s' }}
+        >
+          Top Citizens
+        </button>
+        <button 
+          onClick={() => setActiveTab('agencies')}
+          style={{ flex: 1, padding: '12px', cursor: 'pointer', border: 'none', fontWeight: 'bold', backgroundColor: activeTab === 'agencies' ? '#9c27b0' : 'transparent', color: activeTab === 'agencies' ? '#fff' : '#aaa', transition: '0.3s' }}
+        >
+          Top Agencies
+        </button>
+      </div>
+
+      {/* THE LEADERBOARD LIST */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {currentList.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '20px', color: '#aaa', backgroundColor: '#1e1e1e', borderRadius: '8px' }}>
+            No points awarded in this league yet!
+          </div>
+        ) : (
+          currentList.map((user, index) => {
+            // Assign Medals to the Top 3
+            let medal = `#${index + 1}`;
+            if (index === 0) medal = '🥇';
+            if (index === 1) medal = '🥈';
+            if (index === 2) medal = '🥉';
 
             return (
-              <li key={user.id} style={{ padding: '15px 10px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: index % 2 === 0 ? '#2a2a2a' : 'transparent', borderRadius: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <span style={{ color: rankColor, fontWeight: 'bold', fontSize: '18px', minWidth: '30px' }}>#{index + 1}</span>
-                  <span style={{ fontWeight: 'bold', fontSize: '16px' }}>{displayName}</span>
+              <div key={user.id} style={{ display: 'flex', alignItems: 'center', backgroundColor: '#1e1e1e', padding: '15px 20px', borderRadius: '8px', border: '1px solid #333' }}>
+                <div style={{ width: '40px', fontSize: index < 3 ? '24px' : '16px', fontWeight: 'bold', color: '#888' }}>
+                  {medal}
                 </div>
-                <span style={{ color: '#4CAF50', fontWeight: 'bold', fontSize: '16px' }}>{user.points || 0} pts</span>
-              </li>
+                <div style={{ flex: 1, overflow: 'hidden' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {/* Display OrgName for agencies, or Email for citizens */}
+                    {activeTab === 'agencies' ? user.orgName : user.email.split('@')[0]}
+                  </div>
+                </div>
+                <div style={{ fontWeight: 'bold', color: activeTab === 'citizens' ? '#ff9800' : '#e1bee7', fontSize: '18px' }}>
+                  {user.points || 0} pts
+                </div>
+              </div>
             );
-          })}
-        </ul>
-      )}
+          })
+        )}
+      </div>
     </div>
   );
 }
