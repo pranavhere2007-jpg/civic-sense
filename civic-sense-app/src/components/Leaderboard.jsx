@@ -30,7 +30,9 @@ export default function Leaderboard() {
         <p style={{ color: '#888', textAlign: 'center' }}>No volunteers on the board yet. Be the first!</p>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-          {topUsers.map((user, index) => {
+          {topUsers
+          .filter((user) => user.email !== "admin@college.edu")
+          .map((user, index) => {
             // Safety net just in case email is missing
             const displayName = user.email ? user.email.split('@')[0] : 'Anonymous Citizen';
             
