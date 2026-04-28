@@ -11,6 +11,7 @@ import SidePanel from './SidePanel';
 import MyActivity from './MyActivity';
 import AllIncidents from './AllIncidents';
 import CommunityJury from './CommunityJury';
+import AdminDashboard from './AdminDashboard';
 
 export default function Dashboard() {
   const [selectedReport, setSelectedReport] = useState(null);
@@ -45,6 +46,15 @@ export default function Dashboard() {
         
         {/* NAVIGATION PANEL */}
         <nav style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Only render this button if the logged-in user is YOU */}
+          {auth.currentUser?.email === 'admin@college.edu' && (
+            <button 
+              onClick={() => handleNavigation('admin')} 
+              style={{ padding: '8px 12px', background: currentView === 'admin' ? '#f4433622' : 'transparent', color: currentView === 'admin' ? '#f44336' : 'white', border: '1px solid #f44336', borderRadius: '6px', cursor: 'pointer' }}
+            >
+              🛡️ Admin
+            </button>
+          )}
           <div style={{ padding: '8px 15px', backgroundColor: '#ff9800', color: '#000', borderRadius: '20px', fontWeight: 'bold', marginRight: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}>
             🏆 {userPoints} Pts
           </div>
@@ -103,6 +113,9 @@ export default function Dashboard() {
         )}
         {currentView === 'jury' && (
           <CommunityJury />
+        )}
+        {currentView === 'admin' && (
+          <AdminDashboard />
         )}
 
       </div>

@@ -1,5 +1,5 @@
 // src/components/SidePanel.jsx
-import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { useState, useRef } from 'react';
 
@@ -10,6 +10,7 @@ export default function SidePanel({ report, onClose }) {
   const [planText, setPlanText] = useState(report.planOfAction || '');
   const [isUploading, setIsUploading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
+  const [userData, setUserData] = useState(null);
 
   const processInputRef = useRef(null);
   const finalInputRef = useRef(null);
@@ -17,6 +18,18 @@ export default function SidePanel({ report, onClose }) {
   const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
   const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`;
   const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (currentUser) {
+        const userSnap = await getDoc(doc(db, "Users", currentUser.uid));
+        if (userSnap.exists()) {
+          setUserData(userSnap.data());
+        }
+      }
+    };
+    fetchUserData();
+  }, [currentUser]);
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3;
@@ -159,7 +172,14 @@ export default function SidePanel({ report, onClose }) {
   const processCount = report.processPhotos ? report.processPhotos.length : 0;
 
   // Fallback for older reports that might not have the requiresNGO boolean yet
+  // 1. Is this a high-scale issue?
   const requiresNGO = report.requiresNGO === true || report.category === 'Infrastructure';
+  
+  // 2. Is the current user a fully verified organization?
+  const isVerifiedNGO = userData?.role === 'organization' && userData?.verificationStatus === 'Approved';
+  
+  // 3. Should we block this user? (Yes, if it requires an NGO and they ARE NOT a verified NGO)
+  const isBlocked = requiresNGO && !isVerifiedNGO;
 
   return (
     <div style={{ padding: '25px', backgroundColor: '#1e1e1e', border: '1px solid #333', borderRadius: '12px', color: '#fff', maxHeight: '85vh', overflowY: 'auto' }}>
@@ -214,8 +234,9 @@ export default function SidePanel({ report, onClose }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         
         {/* THE NEW LOGIC GATE FOR NGOs vs REGULAR VOLUNTEERS */}
+        {/* THE UPDATED LOGIC GATE */}
         {report.status === 'Open' && currentUser?.uid !== report.userId && !isDraftingPlan && (
-          requiresNGO ? (
+          isBlocked ? (
             <div style={{ backgroundColor: '#4a148c', color: '#e1bee7', padding: '12px', border: '1px solid #7b1fa2', borderRadius: '6px', textAlign: 'center', fontWeight: 'bold' }}>
               🔒 Dispatched to Government / Verified Agency
             </div>

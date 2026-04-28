@@ -7,11 +7,14 @@ import {
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase'; // Importing from the file we made earlier
 
+import NGOSignUp from './NGOSignUp';
+
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [showNGOSignUp, setShowNGOSignUp] = useState(false);
 
   const handleAuthentication = async (e) => {
     e.preventDefault();
