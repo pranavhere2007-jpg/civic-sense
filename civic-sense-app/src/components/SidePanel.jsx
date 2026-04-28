@@ -20,7 +20,7 @@ export default function SidePanel({ report, onClose }) {
 
   // --- 1. MATH: Haversine Distance Calculator ---
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371e3; // Earth radius in meters
+    const R = 6371e3;
     const toRad = (value) => (value * Math.PI) / 180;
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
@@ -28,7 +28,7 @@ export default function SidePanel({ report, onClose }) {
               Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
               Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Returns distance in meters
+    return R * c; 
   };
 
   // --- 2. UTILS: Image Converters ---
@@ -45,24 +45,39 @@ export default function SidePanel({ report, onClose }) {
     return await fileToBase64(blob);
   };
 
-  // --- 3. AI: The Gemini Fraud Inspector ---
+  // --- 3. AI: Structured Outputs (JSON Schema) ---
   const runAIVerification = async (newFile, isFinal) => {
     setStatusMsg("🤖 AI is inspecting the images...");
     try {
       const originalBase64 = await urlToBase64(report.imageUrl);
       const newBase64 = await fileToBase64(newFile);
 
-      const prompt = `You are a strict anti-fraud inspector for a civic tech app. 
-      Look at Image 1 (the original reported issue) and Image 2 (the new photo).
-      1. Do the background environments (pavement, walls, trees) match closely enough to prove they are the exact same location?
-      2. ${isFinal ? 'Has the issue shown in Image 1 been visibly resolved or cleaned up in Image 2?' : 'Is there visible progress being made on the issue?'}
-      Respond ONLY with raw JSON. No markdown formatting, no conversational text.`;
+      // We give the AI entirely different rules depending on the photo type
+      const prompt = isFinal
+        ? `You are an anti-fraud inspector. Look at Image 1 (original issue) and Image 2 (final resolution).
+           1. backgroundMatch: Do the physical environments (pavement, walls, background) match exactly?
+           2. resolved: Has the issue in Image 1 been completely resolved/cleaned in Image 2?
+           3. reason: Briefly explain your visual analysis.`
+        : `You are an anti-fraud inspector. Look at Image 1 (original issue) and Image 2 (progress photo).
+           1. backgroundMatch: Do the physical environments (pavement, walls, background) match exactly to prove the volunteer is at the correct location?
+           2. reason: Briefly explain your visual analysis. Ignore resolution status entirely.`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+      // We dynamically change the required JSON schema
+      const schemaProperties = isFinal 
+        ? { backgroundMatch: { type: "BOOLEAN" }, resolved: { type: "BOOLEAN" }, reason: { type: "STRING" } }
+        : { backgroundMatch: { type: "BOOLEAN" }, reason: { type: "STRING" } };
+        
+      const schemaRequired = isFinal 
+        ? ["backgroundMatch", "resolved", "reason"] 
+        : ["backgroundMatch", "reason"];
+
+      // Using gemini-1.5-flash with strict JSON generation config
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
+            role: "user",
             parts: [
               { text: prompt },
               { inline_data: { mime_type: "image/jpeg", data: originalBase64 } },
@@ -71,33 +86,31 @@ export default function SidePanel({ report, onClose }) {
           }],
           generationConfig: { 
             responseMimeType: "application/json",
-            // NEW: Forcing the exact schema so Gemini cannot hallucinate extra text
             responseSchema: {
               type: "OBJECT",
-              properties: {
-                backgroundMatch: { type: "BOOLEAN" },
-                resolved: { type: "BOOLEAN" },
-                reason: { type: "STRING" }
-              },
-              required: ["backgroundMatch", "resolved", "reason"]
+              properties: schemaProperties,
+              required: schemaRequired
             }
           }
         })
       });
 
       const data = await response.json();
-      let rawText = data.candidates[0].content.parts[0].text;
+      
+      if (!response.ok) {
+        throw new Error(data.error?.message || "API request failed");
+      }
 
-      // NEW: The Safety Net. Strip out any sneaky markdown formatting
-      rawText = rawText.replace(/```json/gi, '').replace(/```/gi, '').trim();
-      
+      // Because we used responseSchema, this is mathematically guaranteed to be purely JSON.
+      const rawText = data.candidates[0].content.parts[0].text;
       const aiResult = JSON.parse(rawText);
-      return aiResult;
       
+      return aiResult;
+
     } catch (err) {
       console.error("AI Error:", err);
       alert(`RAW AI ERROR: ${err.message || err}`); 
-      throw new Error("AI verification failed to process. Try again.");
+      throw new Error("AI verification failed to process.");
     }
   };
 
@@ -107,7 +120,6 @@ export default function SidePanel({ report, onClose }) {
     setStatusMsg("📍 Checking GPS coordinates...");
 
     try {
-      // Step A: Grab Live GPS
       const position = await new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
       });
@@ -115,18 +127,18 @@ export default function SidePanel({ report, onClose }) {
       const currentLat = position.coords.latitude;
       const currentLng = position.coords.longitude;
       
-      // Step B: Calculate Distance
       const distance = calculateDistance(report.latitude, report.longitude, currentLat, currentLng);
-      if (distance > 50) { // 50 meters threshold
-        alert(`❌ Location Mismatch! You are ${Math.round(distance)} meters away from the issue. You must be at the exact location.`);
+      if (distance > 50) { 
+        alert(`❌ Location Mismatch! You are ${Math.round(distance)} meters away. You must be at the exact location.`);
         setIsUploading(false);
         setStatusMsg("");
         return;
       }
 
-      // Step C: Ask AI to verify
+      // Run AI Check
       const aiResult = await runAIVerification(file, isFinal);
       
+      // RULE 1: Background MUST match for ALL photos (Process & Final)
       if (!aiResult.backgroundMatch) {
         alert(`❌ AI Rejected: Backgrounds do not match. \nReason: ${aiResult.reason}`);
         setIsUploading(false);
@@ -134,14 +146,14 @@ export default function SidePanel({ report, onClose }) {
         return;
       }
 
-      if (!aiResult.resolved) {
-        alert(`❌ AI Rejected: Issue does not appear ${isFinal ? 'resolved' : 'progressed'}. \nReason: ${aiResult.reason}`);
+      // RULE 2: Resolution MUST match ONLY for Final photos
+      if (isFinal && !aiResult.resolved) {
+        alert(`❌ AI Rejected: Issue does not appear resolved. \nReason: ${aiResult.reason}`);
         setIsUploading(false);
         setStatusMsg("");
         return;
       }
 
-      // Step D: Upload to Cloudinary ONLY if it passes all checks
       setStatusMsg("✅ Verification Passed! Uploading securely...");
       const formData = new FormData();
       formData.append("file", file);
@@ -150,13 +162,12 @@ export default function SidePanel({ report, onClose }) {
       const cloudinaryData = await cloudinaryRes.json();
       const secureUrl = cloudinaryData.secure_url;
 
-      // Step E: Save to Firebase
       if (isFinal) {
         await updateDoc(doc(db, "Reports", report.id), {
           afterPhoto: secureUrl,
           status: 'Pending Verification',
           resolvedAt: new Date(),
-          aiVerificationReason: aiResult.reason // Save the AI's logic!
+          aiVerificationReason: aiResult.reason 
         });
         alert("Resolution accepted by AI and submitted! Waiting for final community verification.");
         onClose();
@@ -185,13 +196,10 @@ export default function SidePanel({ report, onClose }) {
     }
   };
 
-  // ... (Keep existing claim, withdraw, verify, and rendering logic identical to before)
-  // For brevity in the prompt, here is the rest of the essential rendering:
-
   const handleClaimSubmit = async () => {
     if (planText.trim().length < 10) return setStatusMsg("Please provide a detailed plan.");
     setStatusMsg("Claiming issue...");
-    await updateDoc(doc(db, "Reports", report.id), { status: 'Claimed', volunteerId: currentUser.uid, claimedAt: new Date(), planOfAction: planText, processPhotos: [] });
+    await updateDoc(doc(db, "Reports", report.id), { status: 'Claimed', volunteerId: currentUser?.uid, claimedAt: new Date(), planOfAction: planText, processPhotos: [] });
     setIsDraftingPlan(false); setStatusMsg(""); onClose();
   };
 
@@ -236,6 +244,14 @@ export default function SidePanel({ report, onClose }) {
           <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', marginTop: '10px' }}>
             {report.processPhotos.map((url, i) => <img key={i} src={url} alt="Process" style={{ height: '80px', width: '80px', borderRadius: '6px', objectFit: 'cover' }} />)}
           </div>
+        </div>
+      )}
+
+      {/* AFTER PHOTO DISPLAY */}
+      {report.afterPhoto && (
+        <div style={{ marginBottom: '20px' }}>
+          <strong style={{ color: '#4CAF50' }}>Resolution Proof:</strong>
+          <img src={report.afterPhoto} alt="Resolved" style={{ width: '100%', borderRadius: '8px', marginTop: '10px', border: '2px solid #4CAF50' }} />
         </div>
       )}
 
