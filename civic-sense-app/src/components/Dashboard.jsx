@@ -3,13 +3,14 @@ import { signOut } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore'
 import { useState, useEffect } from 'react';
-import Leaderboard from './Leaderboard';
 
+import Leaderboard from './Leaderboard';
 import ReportForm from './ReportForm';
 import MapView from './MapView';
 import SidePanel from './SidePanel';
 import MyActivity from './MyActivity';
-import AllIncidents from './AllIncidents'; // NEW IMPORT
+import AllIncidents from './AllIncidents';
+import CommunityJury from './CommunityJury';
 
 export default function Dashboard() {
   const [selectedReport, setSelectedReport] = useState(null);
@@ -49,6 +50,9 @@ export default function Dashboard() {
           </div>
           <button onClick={() => handleNavigation('leaderboard')} style={{ padding: '8px 12px', background: currentView === 'leaderboard' ? '#333' : 'transparent', color: 'white', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer' }}>
             🏅 Leaderboard
+          </button>
+          <button onClick={() => handleNavigation('jury')} style={{ padding: '8px 12px', background: currentView === 'jury' ? '#333' : 'transparent', color: 'white', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer' }}>
+            ⚖️ Jury
           </button>
           <button onClick={() => handleNavigation('map')} style={{ padding: '8px 12px', background: currentView === 'map' ? '#333' : 'transparent', color: 'white', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer' }}>
             🗺️ Live Map
@@ -96,6 +100,9 @@ export default function Dashboard() {
 
         {currentView === 'leaderboard' && (
            <Leaderboard />
+        )}
+        {currentView === 'jury' && (
+          <CommunityJury />
         )}
 
       </div>
