@@ -53,7 +53,9 @@ export default function MapView({ onSelectReport }) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         
-        {reports.map((report) => (
+        {reports
+        .filter((report) => report.status !== "Pending Verification" && report.status !== "Resolved")
+        .map((report) => (
           <Marker 
             key={report.id} 
             position={[report.latitude, report.longitude]}
