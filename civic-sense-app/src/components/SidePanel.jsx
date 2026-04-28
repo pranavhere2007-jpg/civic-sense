@@ -1,13 +1,18 @@
 // src/components/SidePanel.jsx
 import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+
+// Safe environment fallback to prevent compiler crashes
+const env = typeof import.meta !== 'undefined' ? import.meta.env || {} : {};
 
 export default function SidePanel({ report, onClose }) {
-  const currentUser = auth.currentUser;
+  // SAFE CHECK: Added optional chaining to auth
+  const currentUser = auth?.currentUser;
   
   const [isDraftingPlan, setIsDraftingPlan] = useState(false);
-  const [planText, setPlanText] = useState(report.planOfAction || '');
+  // SAFE CHECK: Added optional chaining to report
+  const [planText, setPlanText] = useState(report?.planOfAction || '');
   const [isUploading, setIsUploading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [userData, setUserData] = useState(null);
@@ -15,9 +20,14 @@ export default function SidePanel({ report, onClose }) {
   const processInputRef = useRef(null);
   const finalInputRef = useRef(null);
 
-  const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
-  const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`;
-  const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+  // Sync plan text if user clicks a different report
+  useEffect(() => {
+    setPlanText(report?.planOfAction || '');
+  }, [report]);
+
+  const CLOUDINARY_UPLOAD_PRESET = env.VITE_CLOUDINARY_UPLOAD_PRESET || import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+  const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${env.VITE_CLOUDINARY_CLOUD_NAME || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`;
+  const GEMINI_API_KEY = env.VITE_GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -30,6 +40,9 @@ export default function SidePanel({ report, onClose }) {
     };
     fetchUserData();
   }, [currentUser]);
+
+  // THE CRASH GUARD: If report hasn't loaded yet, don't try to render the UI!
+  if (!report) return null;
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3;
@@ -171,14 +184,9 @@ export default function SidePanel({ report, onClose }) {
   const isMyTask = report.volunteerId === currentUser?.uid;
   const processCount = report.processPhotos ? report.processPhotos.length : 0;
 
-  // Fallback for older reports that might not have the requiresNGO boolean yet
-  // 1. Is this a high-scale issue?
+  // NGO Logic Gates
   const requiresNGO = report.requiresNGO === true || report.category === 'Infrastructure';
-  
-  // 2. Is the current user a fully verified organization?
   const isVerifiedNGO = userData?.role === 'organization' && userData?.verificationStatus === 'Approved';
-  
-  // 3. Should we block this user? (Yes, if it requires an NGO and they ARE NOT a verified NGO)
   const isBlocked = requiresNGO && !isVerifiedNGO;
 
   return (
@@ -233,8 +241,6 @@ export default function SidePanel({ report, onClose }) {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         
-        {/* THE NEW LOGIC GATE FOR NGOs vs REGULAR VOLUNTEERS */}
-        {/* THE UPDATED LOGIC GATE */}
         {report.status === 'Open' && currentUser?.uid !== report.userId && !isDraftingPlan && (
           isBlocked ? (
             <div style={{ backgroundColor: '#4a148c', color: '#e1bee7', padding: '12px', border: '1px solid #7b1fa2', borderRadius: '6px', textAlign: 'center', fontWeight: 'bold' }}>
