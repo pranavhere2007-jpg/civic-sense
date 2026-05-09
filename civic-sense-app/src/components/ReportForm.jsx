@@ -1,6 +1,6 @@
 // src/components/ReportForm.jsx
-import { useState } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
+import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
 export default function ReportForm() {
@@ -11,9 +11,53 @@ export default function ReportForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
+  // --- NEW: Rate Limiting State ---
+  const MAX_DAILY_REPORTS = 5; 
+  const [reportsToday, setReportsToday] = useState(0);
+  const [hasReachedLimit, setHasReachedLimit] = useState(false);
+  const [isCheckingLimit, setIsCheckingLimit] = useState(true);
+
   const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
   const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`;
   const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
+  // --- NEW: Fetch Today's Report Count on Mount ---
+  useEffect(() => {
+    const checkDailyLimit = async () => {
+      // If auth isn't loaded yet, just stop checking for now
+      if (!auth.currentUser) {
+        setIsCheckingLimit(false);
+        return;
+      }
+      
+      try {
+        // Get the exact timestamp for 12:00 AM this morning
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+
+        // Query Firebase: Get all reports by THIS user created AFTER midnight
+        const q = query(
+          collection(db, "Reports"),
+          where("userId", "==", auth.currentUser.uid),
+          where("createdAt", ">=", startOfToday)
+        );
+
+        const querySnapshot = await getDocs(q);
+        const count = querySnapshot.size;
+        
+        setReportsToday(count);
+        if (count >= MAX_DAILY_REPORTS) {
+          setHasReachedLimit(true);
+        }
+      } catch (err) {
+        console.error("Failed to check daily limits:", err);
+      } finally {
+        setIsCheckingLimit(false);
+      }
+    };
+
+    checkDailyLimit();
+  }, [auth.currentUser]);
 
   const fileToBase64 = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -77,6 +121,7 @@ export default function ReportForm() {
 
   const handleSubmit = async () => {
     if (!auth.currentUser) return alert("Please log in to report.");
+    if (hasReachedLimit) return alert("You have reached your daily limit."); // Double-lock security
     
     setIsSubmitting(true);
     setStatusMsg("📍 Fetching GPS Location...");
@@ -114,8 +159,10 @@ export default function ReportForm() {
         createdAt: serverTimestamp()
       });
 
-      // Award 10 points to the user for reporting!
-      // (Assuming you have logic elsewhere or want to add it, but standard report is done)
+      // Increment the local counter and check limit so the UI updates instantly
+      const newCount = reportsToday + 1;
+      setReportsToday(newCount);
+      if (newCount >= MAX_DAILY_REPORTS) setHasReachedLimit(true);
 
       setStatusMsg("✅ Report Submitted Successfully!");
       setTimeout(() => {
@@ -136,9 +183,34 @@ export default function ReportForm() {
 
   return (
     <div style={{ backgroundColor: '#1e1e1e', padding: '20px', borderRadius: '12px', border: '1px solid #333', color: '#fff' }}>
-      <h2 style={{ margin: '0 0 15px 0', color: '#2196F3' }}>Report an Issue</h2>
       
-      {!file && (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+        <h2 style={{ margin: 0, color: '#2196F3' }}>Report an Issue</h2>
+        {/* Subtle indicator showing their daily allowance */}
+        {!isCheckingLimit && (
+          <span style={{ fontSize: '12px', color: hasReachedLimit ? '#f44336' : '#aaa', backgroundColor: '#333', padding: '4px 8px', borderRadius: '4px' }}>
+            {reportsToday} / {MAX_DAILY_REPORTS} Today
+          </span>
+        )}
+      </div>
+
+      {/* If checking limit, show a loading state */}
+      {isCheckingLimit && (
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: '#888' }}>Checking permissions...</div>
+      )}
+
+      {/* If limit reached, show the lock screen */}
+      {!isCheckingLimit && hasReachedLimit && (
+        <div style={{ border: '1px solid #f44336', backgroundColor: '#f4433622', padding: '30px 20px', textAlign: 'center', borderRadius: '8px' }}>
+          <h3 style={{ color: '#f44336', margin: '0 0 10px 0' }}>🛑 Daily Limit Reached</h3>
+          <p style={{ color: '#ffcdd2', fontSize: '14px', margin: 0 }}>
+            You have submitted {MAX_DAILY_REPORTS} reports today. To prevent platform spam, please wait until tomorrow to report new issues.
+          </p>
+        </div>
+      )}
+      
+      {/* Only show the camera button if they are under the limit and haven't uploaded a file yet */}
+      {!isCheckingLimit && !hasReachedLimit && !file && (
         <div style={{ border: '2px dashed #444', padding: '40px 20px', textAlign: 'center', borderRadius: '8px' }}>
           <p style={{ color: '#aaa', marginBottom: '15px' }}>Take a photo of the issue. AI will automatically analyze and categorize it.</p>
           <input type="file" accept="image/*" capture="environment" id="cameraInput" onChange={handleImageSelect} style={{ display: 'none' }} />
