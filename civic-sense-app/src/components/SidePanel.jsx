@@ -56,6 +56,39 @@ export default function SidePanel({ report, onClose }) {
     return R * c; 
   };
 
+  // --- NEW: High Accuracy GPS Fetcher ---
+  const getAccuratePosition = (minAccuracy = 40, timeout = 10000) => {
+    return new Promise((resolve, reject) => {
+      let watchId;
+      let bestPosition = null;
+
+      const timer = setTimeout(() => {
+        navigator.geolocation.clearWatch(watchId);
+        if (bestPosition) resolve(bestPosition); 
+        else reject(new Error("Timeout waiting for GPS lock."));
+      }, timeout);
+
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          if (!bestPosition || position.coords.accuracy < bestPosition.coords.accuracy) {
+            bestPosition = position;
+          }
+          if (position.coords.accuracy <= minAccuracy) {
+            clearTimeout(timer);
+            navigator.geolocation.clearWatch(watchId);
+            resolve(position);
+          }
+        },
+        (error) => {
+          clearTimeout(timer);
+          navigator.geolocation.clearWatch(watchId);
+          reject(error);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+      );
+    });
+  };
+
   const fileToBase64 = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -116,16 +149,17 @@ export default function SidePanel({ report, onClose }) {
 
   const verifyAndUpload = async (file, isFinal) => {
     setIsUploading(true);
-    setStatusMsg("📍 Checking GPS coordinates...");
+    setStatusMsg("📍 Acquiring high-accuracy GPS lock..."); // Updated status message
 
     try {
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
-      });
+      // Use the new robust GPS function
+      const position = await getAccuratePosition();
 
       const distance = calculateDistance(report.latitude, report.longitude, position.coords.latitude, position.coords.longitude);
-      if (distance > 50) { 
-        alert(`❌ Location Mismatch! You are ${Math.round(distance)} meters away. You must be at the exact location.`);
+      
+      // Increased tolerance to 150 meters to safely account for GPS drift
+      if (distance > 150) { 
+        alert(`❌ Location Mismatch! You are ${Math.round(distance)} meters away. You must be within 150 meters of the exact location.`);
         setIsUploading(false); setStatusMsg(""); return;
       }
 

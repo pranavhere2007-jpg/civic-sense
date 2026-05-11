@@ -11,7 +11,6 @@ export default function ReportForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
-  // --- NEW: Rate Limiting State ---
   const MAX_DAILY_REPORTS = 5; 
   const [reportsToday, setReportsToday] = useState(0);
   const [hasReachedLimit, setHasReachedLimit] = useState(false);
@@ -21,21 +20,17 @@ export default function ReportForm() {
   const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`;
   const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
-  // --- NEW: Fetch Today's Report Count on Mount ---
   useEffect(() => {
     const checkDailyLimit = async () => {
-      // If auth isn't loaded yet, just stop checking for now
       if (!auth.currentUser) {
         setIsCheckingLimit(false);
         return;
       }
       
       try {
-        // Get the exact timestamp for 12:00 AM this morning
         const startOfToday = new Date();
         startOfToday.setHours(0, 0, 0, 0);
 
-        // Query Firebase: Get all reports by THIS user created AFTER midnight
         const q = query(
           collection(db, "Reports"),
           where("userId", "==", auth.currentUser.uid),
@@ -65,6 +60,43 @@ export default function ReportForm() {
     reader.onload = () => resolve(reader.result.split(',')[1]);
     reader.onerror = error => reject(error);
   });
+
+  // --- NEW: High Accuracy GPS Fetcher ---
+  const getAccuratePosition = (minAccuracy = 40, timeout = 10000) => {
+    return new Promise((resolve, reject) => {
+      let watchId;
+      let bestPosition = null;
+
+      const timer = setTimeout(() => {
+        navigator.geolocation.clearWatch(watchId);
+        if (bestPosition) {
+          resolve(bestPosition); 
+        } else {
+          reject(new Error("Timeout waiting for GPS lock. Please ensure you are outdoors."));
+        }
+      }, timeout);
+
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          if (!bestPosition || position.coords.accuracy < bestPosition.coords.accuracy) {
+            bestPosition = position;
+          }
+          // Resolve immediately if we hit our accuracy target
+          if (position.coords.accuracy <= minAccuracy) {
+            clearTimeout(timer);
+            navigator.geolocation.clearWatch(watchId);
+            resolve(position);
+          }
+        },
+        (error) => {
+          clearTimeout(timer);
+          navigator.geolocation.clearWatch(watchId);
+          reject(error);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+      );
+    });
+  };
 
   const handleImageSelect = async (e) => {
     const selectedFile = e.target.files[0];
@@ -103,7 +135,6 @@ export default function ReportForm() {
       const data = await response.json();
       const rawText = data.candidates[0].content.parts[0].text;
       
-      // The Unbreakable Regex JSON Extractor
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("AI failed to output valid JSON format.");
       
@@ -121,20 +152,17 @@ export default function ReportForm() {
 
   const handleSubmit = async () => {
     if (!auth.currentUser) return alert("Please log in to report.");
-    if (hasReachedLimit) return alert("You have reached your daily limit."); // Double-lock security
+    if (hasReachedLimit) return alert("You have reached your daily limit."); 
     
     setIsSubmitting(true);
-    setStatusMsg("📍 Fetching GPS Location...");
+    setStatusMsg("📍 Acquiring high-accuracy GPS lock...");
 
     try {
-      // 1. Get Location
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
-      });
+      // Use our new robust function instead of getCurrentPosition
+      const position = await getAccuratePosition();
 
       setStatusMsg("☁️ Uploading Photo...");
       
-      // 2. Upload to Cloudinary
       const formData = new FormData();
       formData.append("file", file);
       formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
@@ -143,7 +171,6 @@ export default function ReportForm() {
       
       setStatusMsg("💾 Saving Report...");
 
-      // 3. Save to Firebase
       await addDoc(collection(db, "Reports"), {
         userId: auth.currentUser.uid,
         imageUrl: cloudinaryData.secure_url,
@@ -159,7 +186,6 @@ export default function ReportForm() {
         createdAt: serverTimestamp()
       });
 
-      // Increment the local counter and check limit so the UI updates instantly
       const newCount = reportsToday + 1;
       setReportsToday(newCount);
       if (newCount >= MAX_DAILY_REPORTS) setHasReachedLimit(true);
@@ -186,7 +212,6 @@ export default function ReportForm() {
       
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h2 style={{ margin: 0, color: '#2196F3' }}>Report an Issue</h2>
-        {/* Subtle indicator showing their daily allowance */}
         {!isCheckingLimit && (
           <span style={{ fontSize: '12px', color: hasReachedLimit ? '#f44336' : '#aaa', backgroundColor: '#333', padding: '4px 8px', borderRadius: '4px' }}>
             {reportsToday} / {MAX_DAILY_REPORTS} Today
@@ -194,12 +219,10 @@ export default function ReportForm() {
         )}
       </div>
 
-      {/* If checking limit, show a loading state */}
       {isCheckingLimit && (
         <div style={{ padding: '40px 20px', textAlign: 'center', color: '#888' }}>Checking permissions...</div>
       )}
 
-      {/* If limit reached, show the lock screen */}
       {!isCheckingLimit && hasReachedLimit && (
         <div style={{ border: '1px solid #f44336', backgroundColor: '#f4433622', padding: '30px 20px', textAlign: 'center', borderRadius: '8px' }}>
           <h3 style={{ color: '#f44336', margin: '0 0 10px 0' }}>🛑 Daily Limit Reached</h3>
@@ -209,7 +232,6 @@ export default function ReportForm() {
         </div>
       )}
       
-      {/* Only show the camera button if they are under the limit and haven't uploaded a file yet */}
       {!isCheckingLimit && !hasReachedLimit && !file && (
         <div style={{ border: '2px dashed #444', padding: '40px 20px', textAlign: 'center', borderRadius: '8px' }}>
           <p style={{ color: '#aaa', marginBottom: '15px' }}>Take a photo of the issue. AI will automatically analyze and categorize it.</p>

@@ -6,11 +6,10 @@ import { db, auth } from '../firebase';
 export default function CommunityJury() {
   const [juryIssues, setJuryIssues] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusMsg, setStatusMsg] = useState('📍 Locating nearby issues...');
+  const [statusMsg, setStatusMsg] = useState('📍 Acquiring high-accuracy GPS lock...');
 
   const currentUser = auth.currentUser;
 
-  // --- MATH: Haversine Distance Calculator ---
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3;
     const toRad = (value) => (value * Math.PI) / 180;
@@ -23,19 +22,51 @@ export default function CommunityJury() {
     return R * c; 
   };
 
+  // --- NEW: High Accuracy GPS Fetcher ---
+  const getAccuratePosition = (minAccuracy = 40, timeout = 10000) => {
+    return new Promise((resolve, reject) => {
+      let watchId;
+      let bestPosition = null;
+
+      const timer = setTimeout(() => {
+        navigator.geolocation.clearWatch(watchId);
+        if (bestPosition) resolve(bestPosition); 
+        else reject(new Error("Timeout waiting for GPS lock."));
+      }, timeout);
+
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          if (!bestPosition || position.coords.accuracy < bestPosition.coords.accuracy) {
+            bestPosition = position;
+          }
+          if (position.coords.accuracy <= minAccuracy) {
+            clearTimeout(timer);
+            navigator.geolocation.clearWatch(watchId);
+            resolve(position);
+          }
+        },
+        (error) => {
+          clearTimeout(timer);
+          navigator.geolocation.clearWatch(watchId);
+          reject(error);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+      );
+    });
+  };
+
   useEffect(() => {
     const fetchNearbyPendingIssues = async () => {
       if (!currentUser) return;
 
       try {
-        // 1. Get Live GPS
-        const position = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
-        });
+        // Use our new robust function
+        const position = await getAccuratePosition();
+        
+        setStatusMsg('📍 Locating nearby issues...');
         const currentLat = position.coords.latitude;
         const currentLng = position.coords.longitude;
 
-        // 2. Fetch all "Pending Verification" issues from Firebase
         const q = query(collection(db, 'Reports'), where('status', '==', 'Pending Verification'));
         const querySnapshot = await getDocs(q);
         
@@ -43,27 +74,22 @@ export default function CommunityJury() {
         querySnapshot.forEach((docSnap) => {
           const data = docSnap.data();
           
-          // Protect against users voting on their own repairs
           if (data.volunteerId === currentUser.uid) return; 
-          
-          // Protect against double-voting
           if (data.votedBy && data.votedBy.includes(currentUser.uid)) return;
 
-          // 3. Filter by Radius (5000 meters = 5km)
           const distance = calculateDistance(data.latitude, data.longitude, currentLat, currentLng);
           if (distance <= 5000) {
             nearbyIssues.push({ id: docSnap.id, distance, ...data });
           }
         });
 
-        // Sort by closest first
         nearbyIssues.sort((a, b) => a.distance - b.distance);
         setJuryIssues(nearbyIssues);
         setLoading(false);
 
       } catch (err) {
         console.error("Jury Error:", err);
-        setStatusMsg("❌ Failed to load location or jury data. Please allow GPS access.");
+        setStatusMsg("❌ Failed to load high-accuracy location or jury data. Ensure GPS is enabled and you are outside.");
       }
     };
 
@@ -74,13 +100,11 @@ export default function CommunityJury() {
     try {
       const reportRef = doc(db, 'Reports', report.id);
       
-      // We fetch the latest document right before voting to ensure accurate vote counts
       const snap = await getDoc(reportRef);
       const data = snap.data();
       const currentVotes = data.upvotes || 0;
 
       if (isApproved) {
-        // If this is the 3rd Upvote -> IT IS RESOLVED!
         if (currentVotes >= 2) {
           await updateDoc(reportRef, {
             status: 'Resolved',
@@ -88,14 +112,12 @@ export default function CommunityJury() {
             votedBy: arrayUnion(currentUser.uid)
           });
 
-          // Award 50 points to the Volunteer who fixed it!
           if (data.volunteerId) {
             const volunteerRef = doc(db, 'Users', data.volunteerId);
             await updateDoc(volunteerRef, { points: increment(50) });
           }
           alert("🎉 Issue Officially Resolved! The volunteer has been awarded 50 points.");
         } else {
-          // Just add an upvote
           await updateDoc(reportRef, {
             upvotes: increment(1),
             votedBy: arrayUnion(currentUser.uid)
@@ -103,21 +125,18 @@ export default function CommunityJury() {
           alert("✅ Vote recorded! Waiting for more community members to verify.");
         }
 
-        // Gamification: Give the voter 5 points for participating in the jury
         const voterRef = doc(db, 'Users', currentUser.uid);
         await updateDoc(voterRef, { points: increment(5) });
 
       } else {
-        // If someone rejects it, we revert the status back to 'In Progress' so the volunteer has to fix it properly
         await updateDoc(reportRef, {
           status: 'In Progress',
-          afterPhoto: null, // Delete the bad photo
+          afterPhoto: null, 
           aiVerificationReason: 'Rejected by Local Community Jury'
         });
         alert("❌ Issue Rejected. It has been sent back to the volunteer for proper fixing.");
       }
 
-      // Remove it from the current UI immediately
       setJuryIssues((prev) => prev.filter((r) => r.id !== report.id));
 
     } catch (err) {
@@ -154,7 +173,6 @@ export default function CommunityJury() {
                 <span style={{ color: '#4CAF50' }}>{Math.round(report.distance)}m away</span>
               </div>
 
-              {/* Before & After Photo Comparison */}
               <div style={{ display: 'flex', width: '100%' }}>
                 <div style={{ flex: 1, position: 'relative' }}>
                   <div style={{ position: 'absolute', top: '10px', left: '10px', backgroundColor: 'rgba(0,0,0,0.7)', padding: '5px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', color: '#ff4d4d' }}>BEFORE</div>
@@ -166,7 +184,6 @@ export default function CommunityJury() {
                 </div>
               </div>
 
-              {/* Voting Controls */}
               <div style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ color: '#aaa', fontSize: '14px' }}>
                   Votes: <strong style={{ color: '#fff' }}>{report.upvotes || 0} / 3</strong> needed
