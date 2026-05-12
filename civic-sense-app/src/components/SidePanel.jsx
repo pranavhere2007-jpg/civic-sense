@@ -168,14 +168,11 @@ export default function SidePanel({ report, onClose }) {
     try {
       // Use the new robust GPS function
       const position = await getAccuratePosition();
-      const devMode = true; // IMP!! CHANGE TO FALSE BEFORE SHIPPING
+      //const devMode = true; // IMP!! CHANGE TO FALSE BEFORE SHIPPING
       const distance = calculateDistance(report.latitude, report.longitude, position.coords.latitude, position.coords.longitude);
       
       // Increased tolerance to 150 meters to safely account for GPS drift
-      if (devMode){
-        console.log("DEV MODE: Bypassing GPS checking!")
-      }
-      if (distance > 150) { 
+      if (distance > 50) { 
         alert(`❌ Location Mismatch! You are ${Math.round(distance)} meters away. You must be within 150 meters of the exact location.`);
         setIsUploading(false); setStatusMsg(""); return;
       }
