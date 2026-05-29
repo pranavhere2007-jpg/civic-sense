@@ -1,10 +1,11 @@
 // src/components/SidePanel.jsx
-import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { useState, useRef, useEffect } from 'react';
 
 // Safe environment fallback to prevent compiler crashes
 const env = typeof import.meta !== 'undefined' ? import.meta.env || {} : {};
+
 
 export default function SidePanel({ report, onClose }) {
   // SAFE CHECK: Added optional chaining to auth
@@ -58,7 +59,7 @@ export default function SidePanel({ report, onClose }) {
 
   // --- NEW: High Accuracy GPS Fetcher ---
   // --- UPDATED: STRICT High Accuracy GPS Fetcher ---
-  const getAccuratePosition = (minAccuracy = 50, maxAcceptableAccuracy = 3000, timeout = 15000) => {
+  const getAccuratePosition = (minAccuracy = 50, maxAcceptableAccuracy = 2000, timeout = 15000) => {
     return new Promise((resolve, reject) => {
       let watchId;
       let bestPosition = null;
@@ -67,7 +68,6 @@ export default function SidePanel({ report, onClose }) {
         navigator.geolocation.clearWatch(watchId);
         
         // If 15 seconds pass, check our best result. 
-        // If it's worse than 150 meters, REJECT IT.
         if (bestPosition && bestPosition.coords.accuracy <= maxAcceptableAccuracy) {
           console.log(`GPS locked with acceptable accuracy: ${Math.round(bestPosition.coords.accuracy)}m`);
           resolve(bestPosition); 
@@ -121,6 +121,7 @@ export default function SidePanel({ report, onClose }) {
     try {
       const originalBase64 = await urlToBase64(report.imageUrl);
       const newBase64 = await fileToBase64(newFile);
+      //const currentUser = auth.currentUser;
 
       const prompt = isFinal
         ? `You are an anti-fraud inspector. Look at Image 1 (original issue) and Image 2 (final resolution).
@@ -163,7 +164,7 @@ export default function SidePanel({ report, onClose }) {
 
   const verifyAndUpload = async (file, isFinal) => {
     setIsUploading(true);
-    setStatusMsg("📍 Acquiring high-accuracy GPS lock..."); // Updated status message
+    setStatusMsg("📍 Acquiring GPS lock..."); // Updated status message
 
     try {
       // Use the new robust GPS function
@@ -171,9 +172,9 @@ export default function SidePanel({ report, onClose }) {
       //const devMode = true; // IMP!! CHANGE TO FALSE BEFORE SHIPPING
       const distance = calculateDistance(report.latitude, report.longitude, position.coords.latitude, position.coords.longitude);
       
-      // Increased tolerance to 150 meters to safely account for GPS drift
-      if (distance > 50) { 
-        alert(`❌ Location Mismatch! You are ${Math.round(distance)} meters away. You must be within 150 meters of the exact location.`);
+      // Increased tolerance to a few meters to safely account for GPS drift
+      if (distance > 2000) { 
+        alert(`❌ Location Mismatch! You are ${Math.round(distance)} meters away. You must be within a few meters of the exact location.`);
         setIsUploading(false); setStatusMsg(""); return;
       }
 
@@ -213,7 +214,23 @@ export default function SidePanel({ report, onClose }) {
     } finally {
       setIsUploading(false);
     }
+
   };
+
+  const deleteReport = async (reportId) => {
+  // Confirm with the user before destroying data
+  const confirmDelete = window.confirm("Are you sure you want to delete this report?");
+  if (!confirmDelete) return;
+  try {
+    const reportRef = doc(db, 'Reports', reportId);
+    await deleteDoc(reportRef);
+    console.log(`Report ${reportId} successfully deleted.`);
+    alert("Report deleted successfully!");
+  } catch (error) {
+    console.error("Error deleting report:", error);
+    alert("Failed to delete report. Please try again.");
+  }
+};
 
   const handleProcessPhoto = (e) => e.target.files[0] && verifyAndUpload(e.target.files[0], false);
   const handleFinalPhoto = (e) => {
@@ -230,6 +247,7 @@ export default function SidePanel({ report, onClose }) {
   };
 
   const isMyTask = report.volunteerId === currentUser?.uid;
+  const isRaisedByMe = report.userId === currentUser?.uid;
   const processCount = report.processPhotos ? report.processPhotos.length : 0;
 
   // NGO Logic Gates
@@ -299,6 +317,12 @@ export default function SidePanel({ report, onClose }) {
               Volunteer to Fix
             </button>
           )
+        )}
+
+        {report.status === "Open" && isRaisedByMe && (
+          <button onClick={() => deleteReport(report.id)} style={{ backgroundColor: '#be6520', color: 'white', padding: '12px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+              Withdraw Report
+          </button>
         )}
 
         <input type="file" accept="image/*" capture="environment" ref={processInputRef} onChange={handleProcessPhoto} style={{ display: 'none' }} />

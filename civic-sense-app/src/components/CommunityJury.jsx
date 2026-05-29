@@ -6,7 +6,7 @@ import { db, auth } from '../firebase';
 export default function CommunityJury() {
   const [juryIssues, setJuryIssues] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusMsg, setStatusMsg] = useState('📍 Acquiring high-accuracy GPS lock...');
+  const [statusMsg, setStatusMsg] = useState('📍 Acquiring GPS lock...');
 
   const currentUser = auth.currentUser;
 
@@ -103,6 +103,7 @@ export default function CommunityJury() {
       const snap = await getDoc(reportRef);
       const data = snap.data();
       const currentVotes = data.upvotes || 0;
+      const scaleScore = data.scaleScore;
 
       if (isApproved) {
         if (currentVotes >= 2) {
@@ -114,9 +115,9 @@ export default function CommunityJury() {
 
           if (data.volunteerId) {
             const volunteerRef = doc(db, 'Users', data.volunteerId);
-            await updateDoc(volunteerRef, { points: increment(50) });
+            await updateDoc(volunteerRef, { points: increment(scaleScore*10) });
           }
-          alert("🎉 Issue Officially Resolved! The volunteer has been awarded 50 points.");
+          alert(`🎉 Issue Officially Resolved! The volunteer has been awarded ${scaleScore*10} points.`);
         } else {
           await updateDoc(reportRef, {
             upvotes: increment(1),
@@ -126,7 +127,7 @@ export default function CommunityJury() {
         }
 
         const voterRef = doc(db, 'Users', currentUser.uid);
-        await updateDoc(voterRef, { points: increment(5) });
+        await updateDoc(voterRef, { points: increment(scaleScore) });
 
       } else {
         await updateDoc(reportRef, {

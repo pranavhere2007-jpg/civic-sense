@@ -29,7 +29,11 @@ export default function MyActivity({onSelectReport}) {
   }, [currentUser.uid]);
 
   // Computed Notifications Hack
-  const actionItems = raisedIssues.filter(issue => issue.status === 'Pending Verification');
+  const actionItems = raisedIssues.filter(issue => 
+    issue.status === 'Pending Verification' && 
+    !issue.votedBy?.includes(currentUser?.uid)
+  );
+
 
   const tabStyle = (tabName) => ({
     padding: '10px 20px', cursor: 'pointer', backgroundColor: activeTab === tabName ? '#2196F3' : '#333',

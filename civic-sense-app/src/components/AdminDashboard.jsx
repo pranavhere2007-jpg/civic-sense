@@ -27,7 +27,7 @@ export default function AdminDashboard() {
         setPendingNGOs(ngos);
       } catch (err) {
         console.error("Fetch Error:", err);
-        setStatusMsg("❌ Failed to load pending applications.");
+        setStatusMsg("Failed to load pending applications.");
       } finally {
         setLoading(false);
       }
@@ -49,7 +49,7 @@ export default function AdminDashboard() {
 
       // Remove the processed NGO from the UI
       setPendingNGOs((prev) => prev.filter((ngo) => ngo.id !== ngoId));
-      alert(`✅ Organization successfully ${decision}!`);
+      alert(`Organization successfully ${decision}!`);
 
     } catch (err) {
       console.error("Update Error:", err);
@@ -64,7 +64,7 @@ export default function AdminDashboard() {
   return (
     <div style={{ padding: '20px', maxWidth: '900px', margin: '0 auto', color: '#fff' }}>
       <h2 style={{ textAlign: 'center', color: '#f44336', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
-        🛡️ Admin Control Panel
+        🛡️ Admin Panel
       </h2>
       <p style={{ textAlign: 'center', color: '#aaa', marginBottom: '30px' }}>
         Review and verify official documents submitted by NGOs and Government Agencies.
@@ -117,10 +117,10 @@ export default function AdminDashboard() {
 
               <div style={{ display: 'flex', gap: '15px', borderTop: '1px solid #333', paddingTop: '15px' }}>
                 <button onClick={() => handleDecision(ngo.id, 'Rejected')} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: '1px solid #ff4d4d', color: '#ff4d4d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                  ❌ Reject Application
+                  Reject Application
                 </button>
                 <button onClick={() => handleDecision(ngo.id, 'Approved')} style={{ flex: 2, padding: '12px', backgroundColor: '#4CAF50', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                  ✅ Verify & Approve NGO
+                  Verify & Approve NGO
                 </button>
               </div>
 

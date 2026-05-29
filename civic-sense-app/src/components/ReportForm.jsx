@@ -1,6 +1,6 @@
 // src/components/ReportForm.jsx
 import { useState, useEffect } from 'react';
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
 export default function ReportForm() {
@@ -34,7 +34,7 @@ export default function ReportForm() {
         const q = query(
           collection(db, "Reports"),
           where("userId", "==", auth.currentUser.uid),
-          where("createdAt", ">=", startOfToday)
+          where("createdAt", ">=", Timestamp.fromDate(startOfToday))
         );
 
         const querySnapshot = await getDocs(q);
@@ -63,7 +63,7 @@ export default function ReportForm() {
 
   // --- NEW: High Accuracy GPS Fetcher ---
   // --- UPDATED: STRICT High Accuracy GPS Fetcher ---
-  const getAccuratePosition = (minAccuracy = 50, maxAcceptableAccuracy = 3000, timeout = 15000) => {
+  const getAccuratePosition = (minAccuracy = 50, maxAcceptableAccuracy = 2000, timeout = 15000) => {
     return new Promise((resolve, reject) => {
       let watchId;
       let bestPosition = null;
@@ -72,7 +72,6 @@ export default function ReportForm() {
         navigator.geolocation.clearWatch(watchId);
         
         // If 15 seconds pass, check our best result. 
-        // If it's worse than 150 meters, REJECT IT.
         if (bestPosition && bestPosition.coords.accuracy <= maxAcceptableAccuracy) {
           console.log(`GPS locked with acceptable accuracy: ${Math.round(bestPosition.coords.accuracy)}m`);
           resolve(bestPosition); 
@@ -116,13 +115,13 @@ export default function ReportForm() {
     setPreviewUrl(URL.createObjectURL(selectedFile));
     setIsScanning(true);
     setAiReport(null);
-    setStatusMsg("🤖 AI is analyzing the issue...");
+    setStatusMsg("AI is analyzing the issue...");
 
     try {
       const base64Image = await fileToBase64(selectedFile);
 
       const prompt = `You are an expert civic triage AI. Analyze this image of a civic issue.
-      You must evaluate the scale of the problem (1 to 10) and decide if a regular citizen can fix it, or if it requires heavy machinery, government permission, or professional NGOs.
+      You must evaluate the scale of the problem (0 to 10) and decide if a regular citizen can fix it, or if it requires heavy machinery, government permission, or professional NGOs.
       
       Respond ONLY with a raw JSON object containing these exact keys:
       - "title" (string: short, clear title)
@@ -165,7 +164,7 @@ export default function ReportForm() {
     if (hasReachedLimit) return alert("You have reached your daily limit."); 
     
     setIsSubmitting(true);
-    setStatusMsg("📍 Acquiring high-accuracy GPS lock...");
+    setStatusMsg("📍 Acquiring GPS lock...");
 
     try {
       // Use our new robust function instead of getCurrentPosition

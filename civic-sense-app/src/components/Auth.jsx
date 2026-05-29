@@ -5,7 +5,7 @@ import {
   signInWithEmailAndPassword 
 } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../firebase'; // Importing from the file we made earlier
+import { auth, db } from '../firebase';
 
 import NGOSignUp from './NGOSignUp';
 

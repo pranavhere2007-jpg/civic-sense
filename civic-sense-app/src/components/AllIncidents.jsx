@@ -1,21 +1,20 @@
 // src/components/AllIncidents.jsx
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot, query } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export default function AllIncidents({ onSelectReport }) {
   const [reports, setReports] = useState([]);
 
   useEffect(() => {
-    const q = query(collection(db, 'Reports'));
+    const q = query(collection(db, 'Reports'),
+      where('status', '==', 'Open')           
+  );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const activeReports = [];
       snapshot.forEach(doc => {
-        const data = doc.data();
-        // Hide resolved issues from this list too
-        if (data.status !== 'Resolved') {
-          activeReports.push({ id: doc.id, ...data });
-        }
+        // Show only open incidents
+          activeReports.push({ id: doc.id, ...doc.data() });
       });
       // Sort newest first
       activeReports.sort((a, b) => b.createdAt?.toDate() - a.createdAt?.toDate());
@@ -45,9 +44,6 @@ export default function AllIncidents({ onSelectReport }) {
                 </span>
               </div>
               <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#ccc' }}>{report.description}</p>
-              <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>
-                📍 GPS: {report.latitude.toFixed(4)}, {report.longitude.toFixed(4)}
-              </p>
             </div>
           ))}
         </div>
