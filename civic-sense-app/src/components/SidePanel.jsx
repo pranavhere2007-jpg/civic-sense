@@ -58,7 +58,7 @@ export default function SidePanel({ report, onClose }) {
 
   // --- NEW: High Accuracy GPS Fetcher ---
   // --- UPDATED: STRICT High Accuracy GPS Fetcher ---
-  const getAccuratePosition = (minAccuracy = 50, maxAcceptableAccuracy = 150, timeout = 15000) => {
+  const getAccuratePosition = (minAccuracy = 50, maxAcceptableAccuracy = 3000, timeout = 15000) => {
     return new Promise((resolve, reject) => {
       let watchId;
       let bestPosition = null;
