@@ -61,52 +61,6 @@ export default function ReportForm() {
     reader.onerror = error => reject(error);
   });
 
-  // --- NEW: High Accuracy GPS Fetcher ---
-  // --- UPDATED: STRICT High Accuracy GPS Fetcher ---
-  const getAccuratePosition = (minAccuracy = 50, maxAcceptableAccuracy = 2000, timeout = 15000) => {
-    return new Promise((resolve, reject) => {
-      let watchId;
-      let bestPosition = null;
-
-      const timer = setTimeout(() => {
-        navigator.geolocation.clearWatch(watchId);
-        
-        // If 15 seconds pass, check our best result. 
-        if (bestPosition && bestPosition.coords.accuracy <= maxAcceptableAccuracy) {
-          console.log(`GPS locked with acceptable accuracy: ${Math.round(bestPosition.coords.accuracy)}m`);
-          resolve(bestPosition); 
-        } else {
-          const currentAcc = bestPosition ? Math.round(bestPosition.coords.accuracy) : 'Unknown';
-          reject(new Error(`GPS signal too weak (Accuracy: ${currentAcc}m). Please step outside for a clear view of the sky.`));
-        }
-      }, timeout);
-
-      watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          // Keep tracking the best position we've seen
-          if (!bestPosition || position.coords.accuracy < bestPosition.coords.accuracy) {
-            bestPosition = position;
-          }
-          
-          // If we hit our gold-standard (e.g., under 50m), resolve immediately!
-          if (position.coords.accuracy <= minAccuracy) {
-            clearTimeout(timer);
-            navigator.geolocation.clearWatch(watchId);
-            console.log(`Perfect GPS lock achieved: ${Math.round(position.coords.accuracy)}m`);
-            resolve(position);
-          }
-        },
-        (error) => {
-          clearTimeout(timer);
-          navigator.geolocation.clearWatch(watchId);
-          reject(error);
-        },
-        // maximumAge: 0 forces the device to get a NEW location, not a cached one
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-      );
-    });
-  };
-
   const handleImageSelect = async (e) => {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -164,14 +118,9 @@ export default function ReportForm() {
     if (hasReachedLimit) return alert("You have reached your daily limit."); 
     
     setIsSubmitting(true);
-    setStatusMsg("📍 Acquiring GPS lock...");
+    setStatusMsg("☁️ Uploading Photo...");
 
     try {
-      // Use our new robust function instead of getCurrentPosition
-      const position = await getAccuratePosition();
-
-      setStatusMsg("☁️ Uploading Photo...");
-      
       const formData = new FormData();
       formData.append("file", file);
       formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
@@ -183,8 +132,9 @@ export default function ReportForm() {
       await addDoc(collection(db, "Reports"), {
         userId: auth.currentUser.uid,
         imageUrl: cloudinaryData.secure_url,
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
+        // Hardcoded Dev-Mode Coordinates (Bengaluru default center)
+        latitude: 12.9716,
+        longitude: 77.5946,
         title: aiReport.title,
         description: aiReport.description,
         category: aiReport.category,
