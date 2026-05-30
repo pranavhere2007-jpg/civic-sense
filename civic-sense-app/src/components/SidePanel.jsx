@@ -3,12 +3,16 @@ import { doc, updateDoc, arrayUnion, getDoc, deleteDoc } from 'firebase/firestor
 import { db, auth } from '../firebase';
 import { useState, useRef, useEffect } from 'react';
 
+// Safe environment fallback to prevent compiler crashes
 const env = typeof import.meta !== 'undefined' ? import.meta.env || {} : {};
 
+
 export default function SidePanel({ report, onClose }) {
+  // SAFE CHECK: Added optional chaining to auth
   const currentUser = auth?.currentUser;
   
   const [isDraftingPlan, setIsDraftingPlan] = useState(false);
+  // SAFE CHECK: Added optional chaining to report
   const [planText, setPlanText] = useState(report?.planOfAction || '');
   const [isUploading, setIsUploading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
@@ -17,6 +21,7 @@ export default function SidePanel({ report, onClose }) {
   const processInputRef = useRef(null);
   const finalInputRef = useRef(null);
 
+  // Sync plan text if user clicks a different report
   useEffect(() => {
     setPlanText(report?.planOfAction || '');
   }, [report]);
@@ -37,7 +42,66 @@ export default function SidePanel({ report, onClose }) {
     fetchUserData();
   }, [currentUser]);
 
+  // THE CRASH GUARD: If report hasn't loaded yet, don't try to render the UI!
   if (!report) return null;
+
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371e3;
+    const toRad = (value) => (value * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; 
+  };
+
+  // --- NEW: High Accuracy GPS Fetcher ---
+  // --- UPDATED: STRICT High Accuracy GPS Fetcher ---
+  const getAccuratePosition = (minAccuracy = 50, maxAcceptableAccuracy = 2000, timeout = 15000) => {
+    return new Promise((resolve, reject) => {
+      let watchId;
+      let bestPosition = null;
+
+      const timer = setTimeout(() => {
+        navigator.geolocation.clearWatch(watchId);
+        
+        // If 15 seconds pass, check our best result. 
+        if (bestPosition && bestPosition.coords.accuracy <= maxAcceptableAccuracy) {
+          console.log(`GPS locked with acceptable accuracy: ${Math.round(bestPosition.coords.accuracy)}m`);
+          resolve(bestPosition); 
+        } else {
+          const currentAcc = bestPosition ? Math.round(bestPosition.coords.accuracy) : 'Unknown';
+          reject(new Error(`GPS signal too weak (Accuracy: ${currentAcc}m). Please step outside for a clear view of the sky.`));
+        }
+      }, timeout);
+
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          // Keep tracking the best position we've seen
+          if (!bestPosition || position.coords.accuracy < bestPosition.coords.accuracy) {
+            bestPosition = position;
+          }
+          
+          // If we hit our gold-standard (e.g., under 50m), resolve immediately!
+          if (position.coords.accuracy <= minAccuracy) {
+            clearTimeout(timer);
+            navigator.geolocation.clearWatch(watchId);
+            console.log(`Perfect GPS lock achieved: ${Math.round(position.coords.accuracy)}m`);
+            resolve(position);
+          }
+        },
+        (error) => {
+          clearTimeout(timer);
+          navigator.geolocation.clearWatch(watchId);
+          reject(error);
+        },
+        // maximumAge: 0 forces the device to get a NEW location, not a cached one
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      );
+    });
+  };
 
   const fileToBase64 = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -57,6 +121,7 @@ export default function SidePanel({ report, onClose }) {
     try {
       const originalBase64 = await urlToBase64(report.imageUrl);
       const newBase64 = await fileToBase64(newFile);
+      //const currentUser = auth.currentUser;
 
       const prompt = isFinal
         ? `You are an anti-fraud inspector. Look at Image 1 (original issue) and Image 2 (final resolution).
@@ -99,8 +164,20 @@ export default function SidePanel({ report, onClose }) {
 
   const verifyAndUpload = async (file, isFinal) => {
     setIsUploading(true);
-    // GPS Checks Completely Removed for Dev Mode
+    setStatusMsg("📍 Acquiring GPS lock..."); // Updated status message
+
     try {
+      // Use the new robust GPS function
+      const position = await getAccuratePosition();
+      //const devMode = true; // IMP!! CHANGE TO FALSE BEFORE SHIPPING
+      const distance = calculateDistance(report.latitude, report.longitude, position.coords.latitude, position.coords.longitude);
+      
+      // Increased tolerance to a few meters to safely account for GPS drift
+      if (distance > 2000) { 
+        alert(`❌ Location Mismatch! You are ${Math.round(distance)} meters away. You must be within a few meters of the exact location.`);
+        setIsUploading(false); setStatusMsg(""); return;
+      }
+
       const aiResult = await runAIVerification(file, isFinal);
       
       if (!aiResult.backgroundMatch) {
@@ -132,26 +209,28 @@ export default function SidePanel({ report, onClose }) {
       }
     } catch (err) {
       console.error(err);
-      alert(err.message || "Failed to process photo.");
+      alert(err.message || "Failed to verify location. Ensure permissions are granted.");
       setStatusMsg("");
     } finally {
       setIsUploading(false);
     }
+
   };
 
   const deleteReport = async (reportId) => {
-    const confirmDelete = window.confirm("Are you sure you want to delete this report?");
-    if (!confirmDelete) return;
-    try {
-      const reportRef = doc(db, 'Reports', reportId);
-      await deleteDoc(reportRef);
-      console.log(`Report ${reportId} successfully deleted.`);
-      alert("Report deleted successfully!");
-    } catch (error) {
-      console.error("Error deleting report:", error);
-      alert("Failed to delete report. Please try again.");
-    }
-  };
+  // Confirm with the user before destroying data
+  const confirmDelete = window.confirm("Are you sure you want to delete this report?");
+  if (!confirmDelete) return;
+  try {
+    const reportRef = doc(db, 'Reports', reportId);
+    await deleteDoc(reportRef);
+    console.log(`Report ${reportId} successfully deleted.`);
+    alert("Report deleted successfully!");
+  } catch (error) {
+    console.error("Error deleting report:", error);
+    alert("Failed to delete report. Please try again.");
+  }
+};
 
   const handleProcessPhoto = (e) => e.target.files[0] && verifyAndUpload(e.target.files[0], false);
   const handleFinalPhoto = (e) => {
@@ -243,20 +322,6 @@ export default function SidePanel({ report, onClose }) {
         {report.status === "Open" && isRaisedByMe && (
           <button onClick={() => deleteReport(report.id)} style={{ backgroundColor: '#be6520', color: 'white', padding: '12px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
               Withdraw Report
-          </button>
-        )}
-
-        {report.status === 'Pending Verification' && isRaisedByMe && (
-          <button 
-            onClick={async () => {
-              if(window.confirm('Verify this fix? Your approval will mark it resolved.')) {
-                 await updateDoc(doc(db, "Reports", report.id), { status: 'Resolved', resolvedAt: new Date() });
-                 alert("Issue successfully verified and resolved!");
-                 onClose();
-              }
-            }} 
-            style={{ backgroundColor: '#4CAF50', color: 'white', padding: '12px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-            ✅ Verify & Resolve Issue
           </button>
         )}
 
