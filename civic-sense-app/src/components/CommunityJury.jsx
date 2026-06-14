@@ -23,7 +23,7 @@ export default function CommunityJury() {
   };
 
   // --- NEW: High Accuracy GPS Fetcher ---
-  const getAccuratePosition = (minAccuracy = 40, timeout = 10000) => {
+  const getAccuratePosition = (minAccuracy = 2000, timeout = 10000) => {
     return new Promise((resolve, reject) => {
       let watchId;
       let bestPosition = null;
